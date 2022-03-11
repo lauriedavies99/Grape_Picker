@@ -45,6 +45,9 @@ print("Depth Scale is: " , depth_scale)
 align_to = rs.stream.color
 align = rs.align(align_to)
 
+lower_green = np.array([0,50,0])
+upper_green = np.array([120,255,120])
+
 # Streaming loop
 try:
     while True:
@@ -66,14 +69,13 @@ try:
         depth_image = np.asanyarray(aligned_depth_frame.get_data())
         color_image = np.asanyarray(color_frame.get_data())
 
-        # Find closest pixel and set clipping distance 100mm behind it
+        # Find closest pixel and set clipping distance 200mm behind it
         closest_pixel = np.amin(depth_image[np.nonzero(depth_image)])
         clipping_distance_in_meters = closest_pixel + 200
         clipping_distance = clipping_distance_in_meters / depth_scale /1000
-        print(clipping_distance)
 
         # Remove background - Set pixels further than clipping_distance to grey
-        grey_color = 153
+        grey_color = 0
         depth_image_3d = np.dstack((depth_image,depth_image,depth_image)) #depth image is 1 channel, color is 3 channels
         bg_removed = np.where((depth_image_3d > clipping_distance) | (depth_image_3d <= 0), grey_color, color_image)
 
@@ -83,8 +85,13 @@ try:
         depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
         images = np.hstack((bg_removed, depth_colormap))
 
-        cv2.namedWindow('Align Example', cv2.WINDOW_NORMAL)
-        cv2.imshow('Align Example', images)
+        mask = cv2.inRange(bg_removed, lower_green, upper_green)
+        masked_image = np.copy(bg_removed)
+        masked_image[mask == 0] = [0, 0, 0]
+
+        cv2.imshow('bgremoval',masked_image)
+        #cv2.namedWindow('Align Example', cv2.WINDOW_NORMAL)
+        #cv2.imshow('Align Example', images)
         key = cv2.waitKey(1)
         # Press esc or 'q' to close the image window
         if key & 0xFF == ord('q') or key == 27:
