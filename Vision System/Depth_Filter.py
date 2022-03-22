@@ -1,12 +1,21 @@
 import pyrealsense2 as rs
 import numpy as np
 import cv2
+import math
+
+def clamp(input, min, max):
+    if input < min:
+        return min
+    elif input > max:
+        return max
+    else :
+        return input
 
 # Create a pipeline
 pipeline = rs.pipeline()
 
 # Create a config and configure the pipeline to stream
-#  different resolutions of color and depth streams
+# different resolutions of color and depth streams
 config = rs.config()
 
 # Get device product line for setting a supporting resolution
@@ -45,9 +54,11 @@ print("Depth Scale is: " , depth_scale)
 align_to = rs.stream.color
 align = rs.align(align_to)
 
-lower_green = np.array([0,50,0])
-upper_green = np.array([120,255,120])
-
+#set bgr limits for the chroma key filter
+lower_HSV = np.array([20,50,50])
+upper_HSV = np.array([40,255,255])
+wh_coef = 1
+percentage = 0
 # Streaming loop
 try:
     while True:
@@ -70,7 +81,8 @@ try:
         color_image = np.asanyarray(color_frame.get_data())
 
         # Find closest pixel and set clipping distance 200mm behind it
-        closest_pixel = np.amin(depth_image[np.nonzero(depth_image)])
+        #closest_pixel = np.amin(depth_image[np.nonzero(depth_image)])
+        closest_pixel = 600
         clipping_distance_in_meters = closest_pixel + 200
         clipping_distance = clipping_distance_in_meters / depth_scale /1000
 
@@ -85,13 +97,53 @@ try:
         depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
         images = np.hstack((bg_removed, depth_colormap))
 
-        mask = cv2.inRange(bg_removed, lower_green, upper_green)
+        # Creates a chroma key mask using the predefined bgr limits and sets
+        # all other pixels to black
+        HSV = cv2.cvtColor(bg_removed,cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(HSV , lower_HSV, upper_HSV)
         masked_image = np.copy(bg_removed)
         masked_image[mask == 0] = [0, 0, 0]
 
-        cv2.imshow('bgremoval',masked_image)
-        #cv2.namedWindow('Align Example', cv2.WINDOW_NORMAL)
-        #cv2.imshow('Align Example', images)
+        ## creates a contour around the image and then draws a rectangle around the objects ##
+        # convets image to grey
+        imgray = cv2.cvtColor(masked_image, cv2.COLOR_BGR2GRAY)
+        # adds a blur to the image
+        imgblur = cv2.GaussianBlur(imgray, (5, 5), 1)
+        # draws the contours around the object
+        ret, thresh = cv2.threshold(imgblur,30, 255, 0)
+        contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            peri = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+            objCor = len(approx)
+            x, y, w, h = cv2.boundingRect(approx)
+            # adds a filter to remove any contours that have an area that's too small
+            if area > 1200:
+                if objCor > 10:
+                    #cv2.drawContours(color_image, cnt, -1, (255, 0, 0), 3)
+                    # draws a rectangle around the contour based on the coordinates found above
+                    cv2.rectangle(color_image, (x, y), (x + (w), y + (h)), (0, 255, 0), 2)
+
+                    # finds the centre of the supposed grape and finds the depth at that point
+                    xcentre = clamp((int(x + (w / 2))),0,479)
+                    ycentre = clamp((int(y + (h / 4))),0,639)
+                    #cv2.circle(color_image,(xcentre, ycentre),2,(0,0,255),2,1)
+                    depth = depth_image[xcentre, ycentre]
+                    exp_area = 183285 * math.exp(-0.006*depth)
+                    area_coef = 1 - (abs(1-(area/exp_area)))
+                    if (w * 3) > h or h > (w*6):
+                        wh_coef = 0.5
+                    else : wh_coef = 1
+                    if depth != 0 and depth < 1000:
+                        percentage = clamp((round((100 * area_coef), 0)),0,100)  # * width_coef * height_coef
+
+                    cv2.putText(color_image,'Certainty : ' + str(percentage) + '%',(x,y),cv2.FONT_HERSHEY_SIMPLEX,0.75,(255,0,0),2)
+                    #cv2.putText(color_image, 'Grape', (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+        #display the final image
+        cv2.imshow('Grape Detection',color_image)
         key = cv2.waitKey(1)
         # Press esc or 'q' to close the image window
         if key & 0xFF == ord('q') or key == 27:
