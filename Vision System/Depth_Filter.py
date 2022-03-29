@@ -11,6 +11,12 @@ def clamp(input, min, max):
     else :
         return input
 
+def label(text,image):
+    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)
+    cv2.rectangle(image, (0, 445), ((text_size[0])[0] + 20, 480), (0, 0, 0), -1)
+    cv2.putText(image, text, (10, 470), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+
+
 # Create a pipeline
 pipeline = rs.pipeline()
 
@@ -46,7 +52,7 @@ profile = pipeline.start(config)
 # Getting the depth sensor's depth scale (see rs-align example for explanation)
 depth_sensor = profile.get_device().first_depth_sensor()
 depth_scale = depth_sensor.get_depth_scale()
-print("Depth Scale is: " , depth_scale)
+#print("Depth Scale is: " , depth_scale)
 
 # Create an align object
 # rs.align allows us to perform alignment of depth frames to others frames
@@ -138,12 +144,26 @@ try:
                     else : wh_coef = 1
                     if depth != 0 and depth < 1000:
                         percentage = clamp((round((100 * area_coef), 0)),0,100)  # * width_coef * height_coef
-
+                        #add wh_coef in!!!!!
                     cv2.putText(color_image,'Certainty : ' + str(percentage) + '%',(x,y),cv2.FONT_HERSHEY_SIMPLEX,0.75,(255,0,0),2)
-                    #cv2.putText(color_image, 'Grape', (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
-        #display the final image
-        cv2.imshow('Grape Detection',color_image)
+        ##Display the final image##
+        #Change names of images
+        Image1 = bg_removed
+        Image2 = HSV
+        Image3 = masked_image
+        Image4 = color_image
+        #Add title for each image
+        label('Remove Background', Image1)
+        label('HSV', Image2)
+        label('Chroma-key filter', Image3)
+        label('Grape Centainty', Image4)
+        #Add all images to one screen
+        img_concate_hori_1 = np.concatenate((Image1,Image2), axis=1)
+        img_concate_hori_2 = np.concatenate((Image3, Image4), axis=1)
+        img_concate_vert = np.concatenate((img_concate_hori_1,img_concate_hori_2), axis=0)
+        #Display the final images
+        cv2.imshow('Grape Detection',img_concate_vert)
         key = cv2.waitKey(1)
         # Press esc or 'q' to close the image window
         if key & 0xFF == ord('q') or key == 27:
