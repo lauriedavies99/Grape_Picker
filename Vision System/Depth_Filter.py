@@ -39,12 +39,12 @@ if not found_rgb:
     print("The demo requires Depth camera with Color sensor")
     exit(0)
 
-config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
 
 if device_product_line == 'L500':
-    config.enable_stream(rs.stream.color, 960, 540, rs.format.bgr8, 30)
+    config.enable_stream(rs.stream.color, 960, 540, rs.format.bgr8, 15)
 else:
-    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 15)
 
 # Start streaming
 profile = pipeline.start(config)
@@ -118,7 +118,8 @@ try:
         # draws the contours around the object
         ret, thresh = cv2.threshold(imgblur,30, 255, 0)
         contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-
+        percentages = []
+        coords = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
             peri = cv2.arcLength(cnt, True)
@@ -127,7 +128,7 @@ try:
             x, y, w, h = cv2.boundingRect(approx)
             # adds a filter to remove any contours that have an area that's too small
             if area > 1200:
-                if objCor > 10:
+                if objCor > 7:
                     #cv2.drawContours(color_image, cnt, -1, (255, 0, 0), 3)
                     # draws a rectangle around the contour based on the coordinates found above
                     cv2.rectangle(color_image, (x, y), (x + (w), y + (h)), (0, 255, 0), 2)
@@ -135,29 +136,36 @@ try:
                     # finds the centre of the supposed grape and finds the depth at that point
                     xcentre = clamp((int(x + (w / 2))),0,479)
                     ycentre = clamp((int(y + (h / 4))),0,639)
-                    #cv2.circle(color_image,(xcentre, ycentre),2,(0,0,255),2,1)
+                    ystalk = y - 10
+                    cv2.circle(color_image,(xcentre, ystalk),2,(0,0,255),2,1)
                     depth = depth_image[xcentre, ycentre]
                     exp_area = 183285 * math.exp(-0.006*depth)
                     area_coef = 1 - (abs(1-(area/exp_area)))
-                    if (w * 3) > h or h > (w*6):
+                    if (w * 3) < h or h > (w*6):
                         wh_coef = 0.5
                     else : wh_coef = 1
                     if depth != 0 and depth < 1000:
-                        percentage = clamp((round((100 * area_coef), 0)),0,100)  # * width_coef * height_coef
-                        #add wh_coef in!!!!!
-                    cv2.putText(color_image,'Certainty : ' + str(percentage) + '%',(x,y),cv2.FONT_HERSHEY_SIMPLEX,0.75,(255,0,0),2)
+                        percentage = clamp((round((100 * area_coef * wh_coef), 0)),0,100)
+                        if (percentage is not None):
+                            percentages.append(percentage)
+                    if (xcentre is not None) and (ystalk is not None):
+                        coords.append([xcentre,ycentre]) #change to stalk for submission
+                    cv2.putText(color_image,'Certainty : ' + str(percentage) + '%',(x,y + h + 20),cv2.FONT_HERSHEY_SIMPLEX,0.6,(255,0,0),2)
+                    #cv2.putText(color_image,str(depth), (x, y), cv2.FONT_HERSHEY_SIMPLEX,0.75, (255, 0, 0), 2)
 
-        ##Display the final image##
-        #Change names of images
+        ## Display the final image ##
+        # Change names of images
         Image1 = bg_removed
         Image2 = HSV
         Image3 = masked_image
         Image4 = color_image
-        #Add title for each image
+        #Add title for each image (label function at start of code)
         label('Remove Background', Image1)
         label('HSV', Image2)
         label('Chroma-key filter', Image3)
         label('Grape Centainty', Image4)
+        if coords:
+            cv2.putText(color_image, 'Pick Location X : ' + str((coords[0])[0]) + ' Y : ' + str((coords[0])[1]) + ' D : ' + str(depth_image[(coords[0])[0],(coords[0])[1]]), (0, 20),cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 0, 0), 2)
         #Add all images to one screen
         img_concate_hori_1 = np.concatenate((Image1,Image2), axis=1)
         img_concate_hori_2 = np.concatenate((Image3, Image4), axis=1)
